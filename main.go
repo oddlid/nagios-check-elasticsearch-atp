@@ -7,6 +7,7 @@ Odd, 2016-07-05 14:36:19
 
 
 import (
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/urfave/cli" // renamed from codegansta
 	"os"
@@ -34,13 +35,19 @@ const (
 )
 
 // run_check() takes the CLI params and glue together all logic in the program
-func run_check(c *cli.Context) {
+func run_check(c *cli.Context) error {
 	//hah := c.String("ha-hostname")
-	//elh := c.String("el-hostname")
-	//idx := c.String("index")
-	//qry := c.String("query")
+	elh := c.String("el-hostname")
+	idx := c.String("index")
+	qry := c.String("query")
 	//hap := c.Int("ha-port")
-	//elp := c.Int("e-port")
+	elp := c.Int("el-port")
+
+	url := fmt.Sprintf(URL_TMPL, DEF_PROT, elh, elp, idx, qry)
+
+	log.Debugf("URL: %q", url)
+
+	return nil
 }
 
 func main() {
@@ -72,19 +79,37 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "index, i",
+			Value: DEF_INDEX,
 			Usage: "Elasticsearch index",
 		},
 		cli.StringFlag{
 			Name:  "query, q",
+			Value: DEF_QUERY,
 			Usage: "Elasticsearch query",
 		},
 		cli.IntFlag{
 			Name:  "warning, w",
+			Value: DEF_WARN,
 			Usage: "Warning threshold",
 		},
 		cli.IntFlag{
 			Name:  "critical, c",
+			Value: DEF_CRIT,
 			Usage: "Critical threshold",
+		},
+		cli.Float64Flag{
+			Name:  "timeout, t",
+			Value: DEF_TMOUT,
+			Usage: "Number of seconds before connection times out",
+		},
+		cli.StringFlag{
+			Name:  "log-level, l",
+			Value: "fatal",
+			Usage: "Log level (options: debug, info, warn, error, fatal, panic)",
+		},
+		cli.BoolFlag{
+			Name:   "debug, d",
+			Usage:  "Run in debug mode",
 		},
 	}
 
