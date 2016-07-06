@@ -8,9 +8,11 @@ Odd, 2016-07-05 14:36:19
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/urfave/cli" // renamed from codegansta
+	//"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -75,6 +77,25 @@ func geturl(url string, timeout time.Duration) (*http.Response, error) {
 	return client.Do(req)
 }
 
+// log2hap() creates the log data and calls Log2HAProxy. Just a wrapper.
+func log2hap(host string, port uint, tmout time.Duration) int64 {
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Error(err)
+		hostname = "localhost"
+	}
+	ha_log_ts := time.Now().Unix()
+	ha_log_entry := fmt.Sprintf("%d MONITORING ATP - ELK - running from %s\n", ha_log_ts, hostname)
+	ha_adr := fmt.Sprintf("%s:%d", host, port)
+	log.Debugf("HAProxy adr: %q", ha_adr)
+	log.Debugf("HAProxy log entry: %q", ha_log_entry)
+	err = Log2HAProxy(ha_adr, ha_log_entry, tmout)
+	if err != nil {
+		log.Error(err)
+	}
+	return ha_log_ts
+}
+
 // run_check() takes the CLI params and glue together all logic in the program
 func run_check(c *cli.Context) error {
 	hah := c.String("ha-host")
@@ -85,23 +106,13 @@ func run_check(c *cli.Context) error {
 	elp := c.Uint("el-port")
 	tmout := c.Float64("timeout")
 
-	url := fmt.Sprintf(URL_TMPL, DEF_PROT, elh, elp, idx, qry)
 	conn_timeout := time.Second * time.Duration(tmout)
+
+	url := fmt.Sprintf(URL_TMPL, DEF_PROT, elh, elp, idx, qry)
 	log.Debugf("Elasticsearch URL: %q", url)
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Error(err)
-		hostname = "localhost"
-	}
-	ha_log_ts := time.Now().Unix()
-	ha_log_entry := fmt.Sprintf("%d MONITORING ATP - ELK - running from %s\n", ha_log_ts, hostname)
-	ha_adr := fmt.Sprintf("%s:%d", hah, hap)
-	log.Debugf("HAProxy adr: %q", ha_adr)
-	err = Log2HAProxy(ha_adr, ha_log_entry, conn_timeout)
-	if err != nil {
-		log.Error(err)
-	}
+	ts := log2hap(hah, hap, conn_timeout)
+	log.Debugf("Log timestamp: %d", ts)
 
 	resp, err := geturl(url, conn_timeout)
 	if err != nil {
@@ -113,7 +124,14 @@ func run_check(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s", data)
+	//fmt.Printf("%s", data)
+	var elres ELResult
+	jerr := json.Unmarshal(data, &elres)
+	if jerr != nil {
+		log.Fatal(jerr)
+	}
+	log.Debugf("%#v", elres)
+
 
 	return nil
 }

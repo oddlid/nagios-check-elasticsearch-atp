@@ -19,18 +19,29 @@ type Source struct {
 	IDXName      string    `json:"index_name"`
 }
 
-type Hits struct {
-	IDX   string   `json:"_index"`
-	Type  string   `json:"_type"`
-	ID    string   `json:"_id"`
-	Score uint64   `json:"_score"`
-	Src   []Source `json:"_source"`
+type Hit struct {
+	IDX   string `json:"_index"`
+	Type  string `json:"_type"`
+	ID    string `json:"_id"`
+	Score uint64 `json:"_score"`
+	Src   Source `json:"_source"`
 }
 
-type HitsSummary struct {
+type HitSummary struct {
 	Total    uint64 `json:"total"`
 	MAXScore uint64 `json:"max_score"`
-	Hits     []Hits `json:"hits"`
+	Hits     []Hit  `json:"hits"`
 }
 
+type Shard struct {
+	Total      uint64 `json:"total"`
+	Successful uint64 `json:"successful"`
+	Failed     uint64 `json:"failed"`
+}
 
+type ELResult struct {
+	Took     uint64     `json:"took"`
+	TimedOut bool       `json:"timed_out"`
+	Shards   Shard      `json:"_shards"`
+	Hits     HitSummary `json:"hits"`
+}
