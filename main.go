@@ -7,14 +7,21 @@ Odd, 2016-07-05 14:36:19
 
 
 import (
+	"crypto/tls"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/urfave/cli" // renamed from codegansta
+	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 )
 
 const (
-	VERSION    string  = "2016-07-05"
+	VERSION    string  = "2016-07-06"
+	UA         string  = "VGT MnM ElasticCheck/1.0"
 	DEF_INDEX  string  = "monitoring"
 	DEF_QUERY  string  = "ATP"
 	DEF_HPORT  uint16  = 3302
@@ -34,18 +41,79 @@ const (
 	E_UNKNOWN  int     = 3
 )
 
+func Log2HAProxy(adr, data string, tmout time.Duration) error {
+	c, err := net.DialTimeout("tcp", adr, tmout)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(c, data)
+	return c.Close()
+}
+
+// geturl() fetches a URL and returns the HTTP response
+func geturl(url string, timeout time.Duration) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("User-Agent", UA)
+
+	tr := &http.Transport{
+		DisableKeepAlives: true, // we're not reusing the connection, so don't let it hang open
+	}
+	if strings.Index(url, "https") >= 0 {
+		// Verifying certs is not the job of this plugin,
+		// so we save ourselves a lot of grief by skipping any SSL verification
+		// Could be a good idea for later to set this at runtime instead
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout: timeout,
+	}
+
+	return client.Do(req)
+}
+
 // run_check() takes the CLI params and glue together all logic in the program
 func run_check(c *cli.Context) error {
-	//hah := c.String("ha-hostname")
-	elh := c.String("el-hostname")
+	hah := c.String("ha-host")
+	elh := c.String("el-host")
 	idx := c.String("index")
 	qry := c.String("query")
-	//hap := c.Int("ha-port")
-	elp := c.Int("el-port")
+	hap := c.Uint("ha-port")
+	elp := c.Uint("el-port")
+	tmout := c.Float64("timeout")
 
 	url := fmt.Sprintf(URL_TMPL, DEF_PROT, elh, elp, idx, qry)
+	conn_timeout := time.Second * time.Duration(tmout)
+	log.Debugf("Elasticsearch URL: %q", url)
 
-	log.Debugf("URL: %q", url)
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Error(err)
+		hostname = "localhost"
+	}
+	ha_log_ts := time.Now().Unix()
+	ha_log_entry := fmt.Sprintf("%d MONITORING ATP - ELK - running from %s\n", ha_log_ts, hostname)
+	ha_adr := fmt.Sprintf("%s:%d", hah, hap)
+	log.Debugf("HAProxy adr: %q", ha_adr)
+	err = Log2HAProxy(ha_adr, ha_log_entry, conn_timeout)
+	if err != nil {
+		log.Error(err)
+	}
+
+	resp, err := geturl(url, conn_timeout)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s", data)
 
 	return nil
 }
@@ -60,21 +128,21 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "ha-hostname",
+			Name:  "ha-host",
 			Usage: "HAProxy hostname or IP",
 		},
-		cli.IntFlag{
+		cli.UintFlag{
 			Name:  "ha-port",
-			Value: int(DEF_HPORT),
+			Value: uint(DEF_HPORT),
 			Usage: "HAProxy port",
 		},
 		cli.StringFlag{
-			Name:  "el-hostname",
+			Name:  "el-host",
 			Usage: "Elasticsearch hostname or IP",
 		},
-		cli.IntFlag{
+		cli.UintFlag{
 			Name:  "el-port",
-			Value: int(DEF_EPORT),
+			Value: uint(DEF_EPORT),
 			Usage: "Elasticsearch port",
 		},
 		cli.StringFlag{
